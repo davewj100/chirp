@@ -135,10 +135,10 @@ def _notify_value_change(window, child_id):
 class GridAccessible(wx.Accessible):
     """wx.Accessible for a wx.grid.Grid's grid window.
 
-    Exposes one virtual child per cell (1-based childId, row-major, as
-    IAccessible requires) whose name is built from the column header
-    and current cell text, so a screen reader reads it the same way it
-    would any other table/list control.
+    Exposes the focused row's cells. Exposing the entire radio as thousands
+    of children makes Windows accessibility enumeration block the GUI thread.
+    Arrow-key navigation still reaches every memory; selection changes expose
+    the new row and notify clients to refresh the small virtual subtree.
     """
 
     def __init__(self, grid):
@@ -149,20 +149,21 @@ class GridAccessible(wx.Accessible):
         cols = self.grid.GetNumberCols()
         if child_id < 1 or cols <= 0:
             return None
-        row, col = divmod(child_id - 1, cols)
-        if row >= self.grid.GetNumberRows():
+        row = self.grid.GetGridCursorRow()
+        col = child_id - 1
+        if row < 0 or row >= self.grid.GetNumberRows() or col >= cols:
             return None
         return row, col
 
     def GetChildCount(self):
-        return (wx.ACC_OK,
-                self.grid.GetNumberRows() * self.grid.GetNumberCols())
+        count = self.grid.GetNumberCols() if self._row_col(1) else 0
+        return wx.ACC_OK, count
 
     def GetChild(self, childId):
         if childId == 0:
             return wx.ACC_OK, self
-        # A plain int childId with no wx.Accessible of its own is a
-        # "simple element" per the wx.Accessible docs.
+        if not self._row_col(childId):
+            return wx.ACC_FAIL, None
         return wx.ACC_OK, None
 
     def GetName(self, childId):
@@ -201,12 +202,20 @@ class GridAccessible(wx.Accessible):
         return wx.ACC_OK, state
 
     def GetFocus(self):
+        # Native virtual dispatch expects status, childId AND child object.
+        # The generated Python documentation omits the integer output.
         row = self.grid.GetGridCursorRow()
         col = self.grid.GetGridCursorCol()
         cols = self.grid.GetNumberCols()
-        if row < 0 or col < 0 or cols <= 0:
-            return wx.ACC_OK, self
-        return wx.ACC_OK, row * cols + col + 1
+        if (row < 0 or row >= self.grid.GetNumberRows() or
+                col < 0 or cols <= 0):
+            return wx.ACC_OK, 0, self
+        return wx.ACC_OK, col + 1, None
+
+    def GetDescription(self, childId):
+        if childId == 0:
+            return wx.ACC_OK, _('Use arrow keys to navigate all memories')
+        return wx.ACC_OK, ''
 
     def GetLocation(self, elementId):
         window = self.grid.GetGridWindow()
@@ -217,12 +226,13 @@ class GridAccessible(wx.Accessible):
             return wx.ACC_FAIL, wx.Rect()
         row, col = cell
         rect = self.grid.CellToRect(row, col)
-        rect.SetPosition(window.ClientToScreen(rect.GetTopLeft()))
+        position = self.grid.CalcScrolledPosition(rect.GetTopLeft())
+        rect.SetPosition(window.ClientToScreen(position))
         return wx.ACC_OK, rect
 
 
 def attach_grid_accessible(grid, name=None):
-    """Give a wx.grid.Grid a real per-cell accessible tree.
+    """Give both grid surfaces the focused row's accessible cells.
 
     Binds EVT_GRID_SELECT_CELL to notify Windows of the new focused
     cell so screen readers announce cell navigation on their own --
@@ -231,6 +241,7 @@ def attach_grid_accessible(grid, name=None):
     window = grid.GetGridWindow()
     if name:
         window.SetName(name)
+        grid.SetName(name)
     if not HAS_ACCESSIBLE:
         return None
 
@@ -241,15 +252,28 @@ def attach_grid_accessible(grid, name=None):
         # this at import time, but if it's ever wrong for some build
         # we still shouldn't crash grid construction over it.
         return None
-    window.SetAccessible(accessible)
+    # wx 3.3 also exposes a native accessible on the outer Grid. Overriding
+    # only its drawing window leaves that full-image tree in place, so UIA
+    # still enumerates thousands of cells. Each window owns a distinct object.
+    grid.SetAccessible(accessible)
+    accessible.inner = GridAccessible(grid)
+    window.SetAccessible(accessible.inner)
 
     def _on_select_cell(event):
         event.Skip()
         cols = grid.GetNumberCols()
         if cols <= 0:
             return
-        child_id = event.GetRow() * cols + event.GetCol() + 1
-        _notify_focus(window, child_id)
+        # Selection events precede the cursor update. Notify on the next
+        # event-loop turn so clients query the new row, not the previous one.
+
+        def notify():
+            if not window:
+                return
+            for target in (grid, window):
+                _notify('ACC_EVENT_OBJECT_REORDER', target, 0)
+                _notify_focus(target, grid.GetGridCursorCol() + 1)
+        wx.CallAfter(notify)
 
     grid.Bind(wx.grid.EVT_GRID_SELECT_CELL, _on_select_cell)
     return accessible
@@ -296,6 +320,8 @@ class PropertyGridAccessible(wx.Accessible):
     def GetChild(self, childId):
         if childId == 0:
             return wx.ACC_OK, self
+        if self._prop_for_child(childId) is None:
+            return wx.ACC_FAIL, None
         return wx.ACC_OK, None
 
     def GetName(self, childId):
@@ -347,12 +373,12 @@ class PropertyGridAccessible(wx.Accessible):
     def GetFocus(self):
         prop = self.pg.GetSelectedProperty()
         if prop is None:
-            return wx.ACC_OK, self
+            return wx.ACC_OK, 0, self
         props = self._visible_props()
         try:
-            return wx.ACC_OK, props.index(prop) + 1
+            return wx.ACC_OK, props.index(prop) + 1, None
         except ValueError:
-            return wx.ACC_OK, self
+            return wx.ACC_OK, 0, self
 
     def GetDescription(self, childId):
         """Exposed via the OS accessibility layer (e.g. NVDA's "report

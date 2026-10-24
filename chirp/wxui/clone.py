@@ -374,6 +374,12 @@ class ChirpCloneDialog(wx.Dialog):
             self, label='',
             style=(wx.ALIGN_CENTER_HORIZONTAL | wx.ST_NO_AUTORESIZE |
                    wx.ELLIPSIZE_END))
+        # Empty, non-resizing labels can be laid out with zero height on MSW.
+        # Reserve a text line before Fit(), including for the model label
+        # below the gauge, so later status updates do not stay invisible.
+        for message in (self.status_msg, self.model_msg):
+            height = max(message.GetBestSize().height, message.GetCharHeight())
+            message.SetMinSize((-1, height))
         vbox.Add(self.status_msg,
                  border=5, proportion=0,
                  flag=wx.EXPAND | wx.BOTTOM)
@@ -682,6 +688,7 @@ class ChirpCloneDialog(wx.Dialog):
             self.gauge.SetRange(status.max)
             self.gauge.SetValue(min(status.cur, status.max))
             self.status_msg.SetLabel(status.msg)
+            self.Layout()
 
         wx.CallAfter(_safe_status)
 

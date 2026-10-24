@@ -379,7 +379,7 @@ class ChirpLiveEditorSet(ChirpEditorSet):
 
 
 class ChirpWelcomePanel(wx.Panel):
-    """Fake "editorset" that just displays the welcome image."""
+    """Welcome content using native text colours and the existing logo."""
 
     def __init__(self, *a, **k):
         super(ChirpWelcomePanel, self).__init__(*a, **k)
@@ -387,22 +387,24 @@ class ChirpWelcomePanel(wx.Panel):
         vbox = wx.BoxSizer(wx.VERTICAL)
         self.SetSizer(vbox)
 
-        # Search for welcome_screen_en_US, welcome_screen_en, welcome_screen
-        locale = wx.App.Get()._lc.GetCanonicalName()
-        locale_base_path = resources.files('chirp.share')
-        welcome_file = locale_base_path.joinpath(
-            'welcome_screen_%s.png' % locale)
-        if not os.path.exists(welcome_file):
-            welcome_file = locale_base_path.joinpath(
-                'welcome_screen_%s.png' % locale[0:2])
-        if not os.path.exists(welcome_file):
-            welcome_file = locale_base_path.joinpath('welcome_screen.png')
-
-        with resources.as_file(welcome_file) as welcome:
-            bmp = wx.Bitmap(str(welcome))
-        width, height = self.GetSize()
-        img = wx.StaticBitmap(self, wx.ID_ANY, bmp)
-        vbox.Add(img, 1, flag=wx.EXPAND)
+        vbox.AddStretchSpacer()
+        title = wx.StaticText(self, label=_('Welcome to CHIRP'))
+        title.SetFont(title.GetFont().Larger().Larger().Bold())
+        vbox.Add(title, 0, wx.ALIGN_CENTER | wx.ALL, 20)
+        logo = resources.files('chirp.share').joinpath('chirp-logo.png')
+        with resources.as_file(logo) as filename:
+            image = wx.Image(str(filename))
+        size = self.FromDIP(wx.Size(266, 108))
+        image.Rescale(size.width, size.height, wx.IMAGE_QUALITY_HIGH)
+        vbox.Add(wx.StaticBitmap(self, bitmap=wx.Bitmap(image)),
+                 0, wx.ALIGN_CENTER | wx.ALL, 15)
+        instructions = wx.StaticText(
+            self, label=_('Get started by either:') + '\n' +
+            _('Opening a file (File menu)') + '\n' +
+            _('Downloading a radio (Radio menu)'), style=wx.ALIGN_CENTER)
+        instructions.SetFont(instructions.GetFont().Larger())
+        vbox.Add(instructions, 0, wx.ALIGN_CENTER | wx.ALL, 20)
+        vbox.AddStretchSpacer()
 
     def close(self):
         pass
@@ -854,6 +856,28 @@ class ChirpMain(wx.Frame):
                                 _('Language') + '...')
         self.Bind(wx.EVT_MENU, self._menu_language, lang_item)
         view_menu.Append(lang_item)
+
+        from chirp.wxui import appearance
+        appearance_menu = wx.Menu()
+        for mode, label in zip(appearance.MODES,
+                               (_('System'), _('Light'), _('Dark'))):
+            item = appearance_menu.AppendRadioItem(wx.ID_ANY, label)
+            item.Check(mode == appearance.selected_mode(CONF))
+            if mode == 'dark' and not hasattr(wx.App, 'SetAppearance'):
+                item.Enable(False)
+                item.SetHelp(_('Dark appearance requires wxPython '
+                               '4.3 or later'))
+
+            def select_appearance(event, selected=mode):
+                CONF.set('appearance', selected, 'prefs')
+                config._CONFIG.save()
+                wx.MessageBox(_('Restart CHIRP to apply the appearance.'),
+                              _('Appearance'), wx.OK | wx.ICON_INFORMATION,
+                              self)
+
+            self.Bind(wx.EVT_MENU, select_appearance, item)
+        view_menu.AppendSubMenu(appearance_menu,
+                                _('Appearance (restart required)'))
 
         radio_menu = wx.Menu()
 

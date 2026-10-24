@@ -1,0 +1,15 @@
+# Canonical LF text in Git; keep source checkouts consistent across platforms.
+* text=auto eol=lf
+
+# Native Windows launchers use CRLF in the working tree.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Radio images and artwork must never undergo line-ending conversion.
+*.img binary
+*.png binary
+*.ico binary
+*.icns binary
+*.xcf binary
+*.pdf binary
+*.mo binary

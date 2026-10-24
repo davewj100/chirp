@@ -976,6 +976,8 @@ class ChirpMemEdit(common.ChirpEditor, common.ChirpSyncEditor):
         self._grid.DisableDragRowSize()
         self._grid.EnableDragCell()
         self._grid.SetFocus()
+        from chirp.wxui import appearance
+        appearance.style_grid(self._grid)
         self._default_cell_bg_color = self._grid.GetCellBackgroundColour(0, 0)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1576,18 +1578,8 @@ class ChirpMemEdit(common.ChirpEditor, common.ChirpSyncEditor):
 
         self._memory_cache[row] = memory
 
-        try:
-            darkmode = wx.SystemSettings.GetAppearance().IsDark()
-        except AttributeError:
-            # Older wxPython doesn't have GetAppearance(), so just assume light
-            darkmode = False
-        if darkmode:
-            immutable_color = wx.SystemSettings.GetColour(
-                wx.SYS_COLOUR_GRAYTEXT)
-        else:
-            # This is a very light gray that looks good in light mode, but
-            # makes dark mode (light font) very hard to read.
-            immutable_color = (0xF5, 0xF5, 0xF5, 0xFF)
+        from chirp.wxui import appearance
+        immutable_color = appearance.immutable_background()
 
         # Build a list of coldef names that are immutable extras for this
         # memory

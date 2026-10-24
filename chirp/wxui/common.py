@@ -452,6 +452,8 @@ class ChirpSettingGrid(wx.Panel):
             self,
             style=wx.propgrid.PG_SPLITTER_AUTO_CENTER |
             wx.propgrid.PG_BOLD_MODIFIED)
+        from chirp.wxui import appearance
+        appearance.style_property_grid(self.pg)
         # wx.propgrid.PropertyGrid does not expose a usable per-row
         # accessibility tree (the whole grid reports as a single
         # ROLE_SYSTEM_CLIENT/PANE object with all row text concatenated),
@@ -668,6 +670,7 @@ class ChirpSettingGrid(wx.Panel):
                     # Mark invalid/unspecified values so the user can fix them
                     self.pg.SetPropertyBackgroundColour(editor.GetName(),
                                                         wx.YELLOW)
+                    self.pg.SetPropertyTextColour(editor.GetName(), wx.BLACK)
 
         self.pg.Bind(wx.propgrid.EVT_PG_CHANGING, self._check_change)
 
